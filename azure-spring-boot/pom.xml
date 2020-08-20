@@ -19,6 +19,10 @@
     <description>Azure Spring Boot AutoConfigure</description>
     <url>https://github.com/Microsoft/azure-spring-boot</url>
 
+    <properties>
+      <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -217,7 +221,6 @@
         <dependency>
           <groupId>javax.annotation</groupId>
           <artifactId>javax.annotation-api</artifactId>
-          <version>1.3.2</version>
       </dependency>
 
         <!-- TEST-->

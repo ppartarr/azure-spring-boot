@@ -75,8 +75,20 @@ public class AzureADGraphClient {
 		}
 	}
 
-	private String getUserMembershipsV1(String accessToken) throws IOException {
-		final URL url = new URL(serviceEndpoints.getAadMembershipRestUri());
+	private String getUserMembershipsV1(String accessToken, String odataNextLink) throws IOException {
+		URL url;
+		log.debug(serviceEndpoints.getAadMembershipRestUri());
+
+		if (odataNextLink != null) {
+			log.debug(odataNextLink);
+			String skipToken = getSkipTokenFromLink(odataNextLink);
+			log.debug(skipToken);
+			url = new URL(serviceEndpoints.getAadMembershipRestUri() + "&" + skipToken);
+		} else {
+			url = new URL(serviceEndpoints.getAadMembershipRestUri());
+		}
+
+		log.debug(url.toString());
 		final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		// Set the appropriate header fields in the request header.
 
@@ -103,6 +115,11 @@ public class AzureADGraphClient {
 		}
 	}
 
+	private String getSkipTokenFromLink(String odataNextLink) {
+		String[] parts = odataNextLink.split("/memberOf\\?");
+		return parts[1];
+	}
+
 	private static String getResponseStringFromConn(HttpURLConnection conn) throws IOException {
 
 		try (BufferedReader reader = new BufferedReader(
@@ -121,24 +138,41 @@ public class AzureADGraphClient {
 	}
 
 	private List<UserGroup> loadUserGroups(String graphApiToken) throws IOException {
-		final String responseInJson = getUserMembershipsV1(graphApiToken);
 		final List<UserGroup> lUserGroups = new ArrayList<>();
 		final ObjectMapper objectMapper = JacksonObjectMapperFactory.getInstance();
-		final JsonNode rootNode = objectMapper.readValue(responseInJson, JsonNode.class);
-		final JsonNode valuesNode = rootNode.get("value");
+		String responseInJson = getUserMembershipsV1(graphApiToken, null);
+		JsonNode rootNode = objectMapper.readValue(responseInJson, JsonNode.class);
+		JsonNode valuesNode = rootNode.get("value");
+		JsonNode nextLink = rootNode.get("odata.nextLink");
 
 		if (valuesNode != null) {
 			log.debug(
 					"isMatchingUserGroupKey() - checking if objectType == Group for every value returned by /memberOf: ");
-			lUserGroups
-			.addAll(StreamSupport.stream(valuesNode.spliterator(), false).filter(this::isMatchingUserGroupKey)
-					.map(node -> {
-						final String objectID = node.
-								get(aadAuthenticationProperties.getUserGroup().getObjectIDKey()).asText();
+			lUserGroups.addAll(StreamSupport.stream(valuesNode.spliterator(), false)
+					.filter(this::isMatchingUserGroupKey).map(node -> {
+						final String objectID = node.get(aadAuthenticationProperties.getUserGroup().getObjectIDKey())
+								.asText();
 						final String displayName = node.get("displayName").asText();
 						return new UserGroup(objectID, displayName);
 					}).collect(Collectors.toList()));
+		}
+		while (nextLink != null) {
+			responseInJson = getUserMembershipsV1(graphApiToken, nextLink.asText());
+			rootNode = objectMapper.readValue(responseInJson, JsonNode.class);
+			valuesNode = rootNode.get("value");
+			nextLink = rootNode.get("odata.nextLink");
 
+			if (valuesNode != null) {
+				log.debug(
+						"isMatchingUserGroupKey() - checking if objectType == Group for every value returned by /memberOf: ");
+				lUserGroups.addAll(StreamSupport.stream(valuesNode.spliterator(), false)
+						.filter(this::isMatchingUserGroupKey).map(node -> {
+							final String objectID = node
+									.get(aadAuthenticationProperties.getUserGroup().getObjectIDKey()).asText();
+							final String displayName = node.get("displayName").asText();
+							return new UserGroup(objectID, displayName);
+						}).collect(Collectors.toList()));
+			}
 		}
 
 		return lUserGroups;
